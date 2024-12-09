@@ -1,0 +1,193 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Search</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-row {
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+        }
+        .form-row label {
+            width: 150px;
+            text-align: right;
+            padding-right: 10px;
+        }
+        input[type="text"] {
+            width: 300px;
+            padding: 5px;
+        }
+        .result-item {
+            margin: 20px 0;
+        }
+        .result-item img {
+            max-width: 300px;
+            max-height: 300px;
+            display: block;
+            margin: 10px 0;
+        }
+        .similarity {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        #image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            margin: 10px 0;
+            display: none;
+        }
+        .pca-controls {
+            margin-left: 20px;
+            display: none;
+        }
+        select, button {
+            padding: 5px;
+        }
+        input[type="number"] {
+            width: 80px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Search</h1>
+    
+    <form id="searchForm">
+        <div class="form-row">
+            <label>Text query:</label>
+            <input type="text" id="text_query" name="text_query">
+        </div>
+        
+        <div class="form-row">
+            <label>Select query type:</label>
+            <select id="query_type" name="query_type">
+                <option value="text">Text query</option>
+                <option value="image">Image query</option>
+                <option value="hybrid">Hybrid query</option>
+            </select>
+        </div>
+        
+        <div class="form-row" id="image-input" style="display: none;">
+            <label>Image query:</label>
+            <input type="file" id="image_query" name="image_query" accept="image/*">
+            <img id="image-preview" src="" alt="Preview">
+        </div>
+        
+        <div class="form-row" id="weight-input" style="display: none;">
+            <label>Hybrid Query Weight (λ):</label>
+            <input type="number" id="weight" name="weight" min="0" max="1" step="0.1" value="0.8">
+        </div>
+        
+        <div class="form-row" id="pca-controls">
+            <label>Use PCA for images:</label>
+            <input type="checkbox" id="use_pca" name="use_pca" value="true">
+            <span class="pca-controls">
+                <label for="k_components">Components (k):</label>
+                <input type="number" id="k_components" name="k_components" min="1" max="{{ max_components }}" value="50">
+            </span>
+        </div>
+
+        <div class="form-row">
+            <label></label>
+            <button type="submit">Search</button>
+        </div>
+    </form>
+
+    <div id="results"></div>
+
+    <script>
+        // Show/hide fields based on query type
+        document.getElementById('query_type').addEventListener('change', function() {
+            const queryType = this.value;
+            const imageInput = document.getElementById('image-input');
+            const weightInput = document.getElementById('weight-input');
+            const pcaControls = document.getElementById('pca-controls');
+            
+            imageInput.style.display = (queryType === 'image' || queryType === 'hybrid') ? 'flex' : 'none';
+            weightInput.style.display = queryType === 'hybrid' ? 'flex' : 'none';
+            pcaControls.style.display = (queryType === 'image' || queryType === 'hybrid') ? 'flex' : 'none';
+            
+            if (queryType === 'text') {
+                document.getElementById('use_pca').checked = false;
+                document.querySelector('.pca-controls').style.display = 'none';
+            }
+        });
+
+        // Show/hide PCA controls
+        document.getElementById('use_pca').addEventListener('change', function() {
+            const pcaControls = document.querySelector('.pca-controls');
+            pcaControls.style.display = this.checked ? 'inline' : 'none';
+        });
+
+        // Image preview
+        document.getElementById('image_query').addEventListener('change', function(e) {
+            const preview = document.getElementById('image-preview');
+            const file = e.target.files[0];
+            
+            if (file) {
+                preview.style.display = 'block';
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Form submission
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = 'Searching...';
+            
+            try {
+                const formData = new FormData(e.target);
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                resultsDiv.innerHTML = '';
+                
+                if (data.error) {
+                    resultsDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                data.results.forEach(([filename, similarity]) => {
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    
+                    const img = document.createElement('img');
+                    img.src = `/static/images/${filename}`;
+                    img.alt = filename;
+                    
+                    img.onerror = function() {
+                        this.onerror = null;
+                        this.style.display = 'none';
+                        resultItem.innerHTML += '<p>Image not found</p>';
+                    };
+                    
+                    resultItem.appendChild(img);
+                    resultItem.innerHTML += `<div class="similarity">Similarity: ${similarity.toFixed(4)}</div>`;
+                    resultsDiv.appendChild(resultItem);
+                });
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
